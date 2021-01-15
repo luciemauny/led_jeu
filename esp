@@ -1,0 +1,97 @@
+/*  - - - IFD2 LIGHT SERIES GAME - - - 
+Martin Justine | Mauny Lucie | Peyron Thomas | Gillard Antoine
+UTBM - - - A2020
+Code à inclure dans l'esp8266 */
+
+#include <Arduino.h>
+#include <string.h>
+#include <ESP8266WiFi.h>
+#include <MQTT.h>
+#include <string.h>
+MQTTClient client;
+WiFiClient wificlient;
+
+/* SSID du réseaux Wifi */
+const char ssid[] = "pomme_pomme";
+const char pass[] = "coucou_hibou";
+
+/* Addresse IP du Broker MQTT (Mosquitto) */
+const char hostname[15] = "192.168.43.172"; 
+
+/* Topics MQTT OUT*/
+String mqqtTopicSEQout = "/IFD2/lightseriesgame/S_in";
+String mqqtTopicTOURout = "/IFD2/lightseriesgame/T_in";
+String mqqtTopicPTSout = "/IFD2/lightseriesgame/P_in";
+/* Topics MQTT IN*/
+String mqqtTopicSEQin = "/IFD2/lightseriesgame/S_out";
+String mqqtTopicTOURin = "/IFD2/lightseriesgame/T_out";
+
+String inString;
+
+void messageReceived(String &topic, String &payload);
+void serialEvent();
+void connect();
+
+void setup() {
+  // Initialisation des ports et sorties 
+  Serial.begin(115200);//vers ATMega
+
+  WiFi.begin(ssid, pass);
+  
+  client.begin(hostname, 1883, wificlient);
+  client.onMessage(messageReceived);
+  connect();
+}
+void loop() {
+  client.loop();
+  if (!client.connected()) {
+    connect();
+  }
+  serialEvent();
+}
+
+void connect() {
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.println(".");
+    delay(100);
+  }
+  while (!client.connect("ijernhitdgkj", "try", "try")) {
+    Serial.println("+");
+    delay(100);
+  }
+
+  /* inscription aux topics */
+  client.subscribe(mqqtTopicSEQin);
+  client.subscribe(mqqtTopicTOURin);
+  
+}
+void messageReceived(String &topic, String &payload) {
+  Serial.print("["); 
+  Serial.print(topic);
+  Serial.print("~"); 
+  Serial.print(payload);
+  Serial.println("]");
+}
+
+void serialEvent() {
+  String topic;
+  topic=mqqtTopicSEQout;//initialisation pour le cas default
+
+  while (Serial.available()) {
+    
+    char inChar = Serial.read();
+    inString += inChar;
+
+    //Selon la présence d'une string envoyer le message dans un topic différent, par défault S_OUT
+    if (inChar == '>') { // ] = caractère de fin de commande
+      if (inString.indexOf("T_out")!= -1){
+        topic= mqqtTopicTOURout;
+      }
+      if (inString.indexOf("P_out") != -1){
+        topic= mqqtTopicPTSout;
+      }
+      client.publish(topic, inString);
+      inString = "";//reset de la string jusqu'à la prochaine commande
+    }
+  }
+}
