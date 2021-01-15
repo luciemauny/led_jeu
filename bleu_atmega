@@ -1,0 +1,558 @@
+/*  - - - IFD2 LIGHT SERIES GAME - - - 
+Martin Justine | Mauny Lucie | Peyron Thomas | Gillard Antoine
+UTBM - - - A2020
+Code à inclure dans l'ATmega -> Carte 'BLEUE'
+ /!\ Le code commenté se trouve sur 'rouge_lightseriesgame' /!\  */
+
+#include <Arduino.h>
+#include <U8x8lib.h>	
+#include <Adafruit_GFX.h>
+
+#define TAILLE_SEQUENCE 6
+#define DELAY_LECTURE 4000
+#define NB_TOUR_JEU 4
+#define DELAY_AFFICHAGE 700
+
+const int led1 = 51;
+const int resistance1 = A0;
+const int led2 = 48;
+const int resistance2 = A1;
+const int led3 = 53;
+const int resistance3 = A2;
+const int led4 = 52;
+const int resistance4 = A3;
+const int led5 = 50;
+const int resistance5 = A4;
+const int bouton_pressoir_jeu = 44;
+const int buzzer = 2;
+const int bouton_pressoir_sensi = 45;
+
+U8X8_SH1106_128X64_NONAME_HW_I2C u8x8(U8X8_PIN_NONE);
+
+int seuil_photo=3000;
+
+typedef struct Sequence{
+  int num_led;
+} Sequence;
+
+String sequence_string;
+String tour;
+
+int lecture_sequence(Sequence*, int);
+void affichage_sequence(Sequence*);
+void hard_blink();
+void musique_victoire();
+void musique_defaite();
+short int verif_sequence(Sequence*, Sequence*);
+void reglage_sensi(int *seuil_photo);
+String sequence_to_string(Sequence* );
+void string_to_sequence(String, Sequence *);
+void recup_esp(String *, String *);
+void affichage_ecran(int, char*);
+void clear_ecran();
+
+void setup() 
+{
+  pinMode(led1,OUTPUT);
+  pinMode(led2,OUTPUT);
+  pinMode(led3,OUTPUT);
+  pinMode(led4,OUTPUT);
+  pinMode(led5,OUTPUT);
+  pinMode(bouton_pressoir_sensi, INPUT_PULLUP);
+  pinMode(bouton_pressoir_jeu, INPUT_PULLUP);
+  pinMode(buzzer, OUTPUT);
+
+  u8x8.begin();
+  u8x8.setPowerSave(0);
+  u8x8.setFont(u8x8_font_chroma48medium8_r);
+  u8x8.setFlipMode(0);
+
+  Serial.begin(115200);
+  Serial3.begin(115200);
+}
+void loop() 
+{
+  int i=0, compt_tour=0;
+  boolean sequence_recorded=0;
+
+  Sequence sequenceJ1[TAILLE_SEQUENCE];
+  Sequence sequenceJ2[TAILLE_SEQUENCE];
+
+  for (i=0;i<TAILLE_SEQUENCE;i++){
+    sequenceJ1[i].num_led=0;
+    sequenceJ2[i].num_led=0;
+  }
+
+  recup_esp(&sequence_string,&tour);
+
+  while(compt_tour<NB_TOUR_JEU)
+  {
+    recup_esp(&sequence_string,&tour);
+    
+    if (tour.indexOf("bleu")!=-1)
+    {
+      if (compt_tour==0){//Si c'est le premier tour
+      clear_ecran();
+      affichage_ecran(1,"Bienvenue !");
+      affichage_ecran(3,"maintenez le");
+      affichage_ecran(4,"bouton derriere");
+      affichage_ecran(5,"les leds afin de");
+      affichage_ecran(6,"regler la sensi");
+      delay(DELAY_LECTURE);
+      delay(5000);
+
+        if (digitalRead(bouton_pressoir_sensi)==0)
+        {
+          clear_ecran();
+          affichage_ecran(1,"reglage sensi...");
+          affichage_ecran(4,"lachez le bouton"); 
+          affichage_ecran(5,"une fois fini");
+          delay(DELAY_LECTURE);
+
+          reglage_sensi(&seuil_photo);
+        }
+      }
+      clear_ecran(); 
+      hard_blink();
+      affichage_ecran(4,"C'est votre tour");
+      delay(DELAY_LECTURE);
+      
+      clear_ecran();
+      affichage_ecran(1,"la sequence de");
+      affichage_ecran(2,"votre adversaire");
+      affichage_ecran(3,"va s'afficher...");
+      affichage_ecran(4,"retenez la bien");
+      delay(DELAY_LECTURE);
+      affichage_ecran(6,"3");
+      delay(700);
+      affichage_ecran(6,"2");
+      delay(700);
+      affichage_ecran(6,"1");
+      delay(700);
+      affichage_ecran(6,"GO !!!!");
+
+      string_to_sequence(sequence_string,sequenceJ2);
+      affichage_sequence(sequenceJ2);
+
+      clear_ecran();
+      affichage_ecran(1,"Maintenant");
+      affichage_ecran(2,"repetez la");
+      affichage_ecran(3,"sequence");
+      affichage_ecran(4,"sur les leds");
+      delay(DELAY_LECTURE);
+
+      sequence_recorded=0;
+      while(sequence_recorded==0){
+      sequence_recorded = lecture_sequence(sequenceJ1,seuil_photo);
+      }
+
+      clear_ecran();
+      affichage_ecran(1,"Sequence recup");
+      affichage_ecran(5,"Verification...");
+      delay(DELAY_LECTURE);
+
+      if(verif_sequence(sequenceJ1,sequenceJ2)==1)
+      {
+        clear_ecran();
+        affichage_ecran(1,"Bravo c'est une");
+        affichage_ecran(3,"VICTOIRE");
+        affichage_ecran(6,"!!!");
+  
+        Serial3.println("<P_out#bleu>");
+        hard_blink();
+        musique_victoire();
+
+      }else
+      {
+        clear_ecran();
+        affichage_ecran(1,"Oooops, echec");
+        affichage_ecran(5,"....");
+        hard_blink();
+        musique_defaite();
+      }
+
+      compt_tour++;
+
+      clear_ecran();
+      affichage_ecran(1,"A vous !!!");
+      affichage_ecran(3,"enregistrez");
+      affichage_ecran(4,"une sequence...");      
+      sequence_recorded=0;
+      while(sequence_recorded==0){
+      sequence_recorded = lecture_sequence(sequenceJ1,seuil_photo);
+      }
+
+      clear_ecran();
+      affichage_ecran(2,"sequence bien");
+      affichage_ecran(3,"enregistree !! ");
+
+      Serial3.println(sequence_to_string(sequenceJ1));
+      delay(4000);
+      recup_esp(&sequence_string,&tour);
+      Serial3.println("<T_out#rouge>");
+      delay(4000);
+      recup_esp(&sequence_string,&tour);
+      Serial.println(tour);
+      clear_ecran();
+
+    }
+    affichage_ecran(1,"Tour de votre");
+    affichage_ecran(2,"adversaire");
+    affichage_ecran(5,"please patientez");
+    affichage_ecran(6,"...");
+  }
+  clear_ecran();
+  affichage_ecran(1,"- Fin du jeu -");
+  affichage_ecran(2,"IFD2 - A2020");
+  affichage_ecran(4,"Lucie MAUNY");
+  affichage_ecran(5,"Thomas PEYRON");
+  affichage_ecran(6,"Justine MARTIN");
+  affichage_ecran(7,"Antoine GILLARD");
+
+  delay(10000);
+}
+String sequence_to_string(Sequence* sequence){
+   String sequenceJ1;
+   int i=0;
+
+   sequenceJ1 += "<";
+   for (i=0;i<TAILLE_SEQUENCE;i++){
+    sequenceJ1 += "#";
+    sequenceJ1 += sequence[i].num_led;
+      
+   }
+   sequenceJ1 += "#";
+   sequenceJ1 += ">";
+   return sequenceJ1;
+}
+void string_to_sequence(String inString,Sequence *sequence){
+   int i=0, l=0;
+   char diese='#';
+  while(l<TAILLE_SEQUENCE)
+  {
+    for (i=0; i<inString.length(); i++)
+    {
+      if (inString.charAt(i)==diese)
+      {
+        sequence[l].num_led = (inString.charAt(i+1)-48);
+        l++;
+      }
+    }
+  }
+}
+void recup_esp(String* sequence, String* tour){
+
+  String inString;
+
+  while (Serial3.available()) {    
+    char inChar = Serial3.read();
+    inString += inChar;
+
+    if (inChar == ']')
+    { 
+      if (inString.indexOf("T_out")!= -1){
+        *tour = inString;
+        Serial.print("Le message : ");
+        Serial.print(inString);
+        Serial.println(" a bien été recu sur *tour");
+      }
+      if (inString.indexOf("S_out") != -1){
+        *sequence = inString;
+        Serial.print("Le message : ");
+        Serial.print(inString);
+        Serial.println(" a bien été recu sur *sequence_string");
+      }
+    }
+  }
+}
+
+int lecture_sequence(Sequence *sequence1, int seuil_photo){
+
+  int value1, value2, value3, value4, value5, j1, j2, j3, j4, j5, i=0, tps_delay=500;
+
+  boolean etatBouton = digitalRead(bouton_pressoir_jeu);
+
+    if (etatBouton==0){
+      delay(1000);
+      etatBouton = digitalRead(bouton_pressoir_jeu);
+
+      while (etatBouton==1 || i<TAILLE_SEQUENCE)
+      {
+        value1 = analogRead(resistance1);
+        j1 = map(value1,0,1023,0,5000);
+        
+        value2 = analogRead(resistance2);
+        j2 = map(value2,0,1023,0,5000);
+
+        value3 = analogRead(resistance3);
+        j3 = map(value3,0,1023,0,5000);
+
+        value4 = analogRead(resistance4);
+        j4 = map(value4,0,1023,0,5000);
+
+        value5 = analogRead(resistance5);
+        j5 = map(value5,0,1023,0,5000);
+
+          if (j1<seuil_photo){
+            digitalWrite(led1,HIGH);
+            sequence1[i].num_led=1;
+            i++;
+            delay(tps_delay);
+          }else {
+            digitalWrite(led1,LOW);
+          }
+          
+          if (j2<seuil_photo){
+            digitalWrite(led2,HIGH);
+            sequence1[i].num_led=2;
+            i++;
+            delay(tps_delay);
+          }else {
+            digitalWrite(led2,LOW);
+          }
+
+          if (j3<seuil_photo){
+            digitalWrite(led3,HIGH);
+            sequence1[i].num_led=3;
+            i++;
+            delay(tps_delay);
+          }else {
+            digitalWrite(led3,LOW);
+          }
+
+          if (j4<seuil_photo){
+            digitalWrite(led4,HIGH);
+            sequence1[i].num_led=4;
+            i++;
+            delay(tps_delay);
+          }else {
+            digitalWrite(led4,LOW);
+          }
+
+          if (j5<seuil_photo){
+            digitalWrite(led5,HIGH);
+            sequence1[i].num_led=5;
+            i++;
+            delay(tps_delay);
+          }else {
+            digitalWrite(led5,LOW);
+          }
+
+       etatBouton = digitalRead(bouton_pressoir_jeu);
+
+        delay(10);
+      }
+      digitalWrite(led1,LOW);
+      digitalWrite(led2,LOW);
+      digitalWrite(led3,LOW);
+      digitalWrite(led4,LOW);
+      digitalWrite(led5,LOW);
+      return 1;
+    }
+ return 0;
+}
+void affichage_sequence(Sequence *sequence1){
+
+  int i=0;
+  for (i=0;i<TAILLE_SEQUENCE;i++)
+  {
+    switch (sequence1[i].num_led)
+    {
+    case 1:
+      digitalWrite(led1,HIGH);
+      digitalWrite(led2,LOW);
+      digitalWrite(led3,LOW);
+      digitalWrite(led4,LOW);
+      digitalWrite(led5,LOW);
+      break;
+
+    case 2:
+      digitalWrite(led1,LOW);
+      digitalWrite(led2,HIGH);
+      digitalWrite(led3,LOW);
+      digitalWrite(led4,LOW);
+      digitalWrite(led5,LOW);
+      break;
+
+    case 3:
+      digitalWrite(led1,LOW);
+      digitalWrite(led2,LOW);
+      digitalWrite(led3,HIGH);
+      digitalWrite(led4,LOW);
+      digitalWrite(led5,LOW);
+      break;
+
+    case 4:
+      digitalWrite(led1,LOW);
+      digitalWrite(led2,LOW);
+      digitalWrite(led3,LOW);
+      digitalWrite(led4,HIGH);
+      digitalWrite(led5,LOW);
+      break;
+
+    case 5:
+      digitalWrite(led1,LOW);
+      digitalWrite(led2,LOW);
+      digitalWrite(led3,LOW);
+      digitalWrite(led4,LOW);
+      digitalWrite(led5,HIGH);
+      break;
+
+    default:
+      break;
+    }
+    delay(DELAY_AFFICHAGE);
+    digitalWrite(led1,LOW);
+    digitalWrite(led2,LOW);
+    digitalWrite(led3,LOW);
+    digitalWrite(led4,LOW);
+    digitalWrite(led5,LOW);
+    delay(DELAY_AFFICHAGE);
+  }
+  
+
+}
+void reglage_sensi(int *seuil_photo){
+
+  int value1, value2, value3, value4, value5, j1, j2, j3, j4, j5, potentio;
+
+  hard_blink();
+  
+  boolean etatBouton = digitalRead(bouton_pressoir_sensi); 
+
+      while (etatBouton==0)
+      {
+        potentio = analogRead(A8); 
+        *seuil_photo = map(potentio, 0, 1023, 0, 5000); 
+
+        value1 = analogRead(resistance1);
+        j1 = map(value1,0,1023,0,5000);
+        
+        value2 = analogRead(resistance2);
+        j2 = map(value2,0,1023,0,5000);
+
+        value3 = analogRead(resistance3);
+        j3 = map(value3,0,1023,0,5000);
+
+        value4 = analogRead(resistance4);
+        j4 = map(value4,0,1023,0,5000);
+
+        value5 = analogRead(resistance5);
+        j5 = map(value5,0,1023,0,5000);
+
+        etatBouton = digitalRead(bouton_pressoir_sensi);
+
+          if (j1<*seuil_photo){
+            digitalWrite(led1,HIGH);
+          }else {
+            digitalWrite(led1,LOW);
+          }
+          
+          if (j2<*seuil_photo){
+            digitalWrite(led2,HIGH);
+          }else {
+            digitalWrite(led2,LOW);
+          }
+
+          if (j3<*seuil_photo){
+            digitalWrite(led3,HIGH);
+          }else {
+            digitalWrite(led3,LOW);
+          }
+
+          if (j4<*seuil_photo){
+            digitalWrite(led4,HIGH);
+          }else {
+            digitalWrite(led4,LOW);
+          }
+
+          if (j5<*seuil_photo){
+            digitalWrite(led5,HIGH);
+          }else {
+            digitalWrite(led5,LOW);
+          }
+
+       etatBouton = digitalRead(bouton_pressoir_sensi);
+
+        delay(10);
+      }
+}
+
+void affichage_ecran(int lin, char* str) {
+  int col = int((16 - String(str).length()) / 2);
+  u8x8.drawString(col, lin, str);
+}
+
+void clear_ecran(){
+  for(int i=0; i<7;i++)
+  {
+   int col = int((16 - String("                ").length()) / 2);
+    u8x8.drawString(col, i, "                ");
+  }
+}
+void hard_blink(){
+  int i=0;
+
+  for (i=0;i<10;i++){
+  digitalWrite(led1,HIGH);
+  digitalWrite(led2,HIGH);
+  digitalWrite(led3,HIGH);
+  digitalWrite(led4,HIGH);
+  digitalWrite(led5,HIGH);
+
+  delay(100);
+
+  digitalWrite(led1,LOW);
+  digitalWrite(led2,LOW);
+  digitalWrite(led3,LOW);
+  digitalWrite(led4,LOW);
+  digitalWrite(led5,LOW);
+  
+  delay(100);
+  }
+}
+
+short int verif_sequence(Sequence *sequenceJ1, Sequence *sequenceJ2)
+{
+  int i=0;
+  boolean verif=1;
+  for (i=0;i<TAILLE_SEQUENCE;i++)
+  {
+    if (sequenceJ1[i].num_led!=sequenceJ2[i].num_led)
+    {
+        verif=0;
+    }
+  }
+  if (verif)
+  {
+    return 1;
+  }
+  return 0;
+}
+
+void musique_victoire()
+{
+  tone (2, 261, 100);
+  delay(150);
+  tone(2, 261, 100);
+  delay(150);
+  tone (2, 261, 100); 
+  delay(150);
+  tone(2, 392, 100);
+  delay(350);
+  tone (2, 261, 100);
+  delay(120);
+  tone(2, 392, 400); 
+  delay(1500);
+}
+void musique_defaite()
+{
+  tone (2, 392, 200); 
+  delay(250);
+  tone(2, 370, 200); 
+  delay(250);
+  tone (2, 349, 200); 
+  delay(250);
+  tone(2, 329, 700); 
+  delay(2000);
+}
